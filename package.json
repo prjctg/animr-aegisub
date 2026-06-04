@@ -1,0 +1,22 @@
+{
+  "name": "animr-aegisub",
+  "version": "0.1.0",
+  "description": "Run Aegisub karaskel Lua scripts as Animr karaoke animations",
+  "type": "module",
+  "main": "dist/animr-aegisub.esm.js",
+  "exports": {
+    ".": "./dist/animr-aegisub.esm.js"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "fengari-web": "^0.1.4",
+    "rollup": "^4.9.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "vitest": "^2.1.0"
+  }
+}
