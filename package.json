@@ -4,9 +4,13 @@
   "description": "Run Aegisub karaskel Lua scripts as Animr karaoke animations",
   "license": "MIT",
   "type": "module",
-  "main": "dist/animr-aegisub.esm.js",
+  "main": "dist/animr-aegisub.js",
   "exports": {
-    ".": "./dist/animr-aegisub.esm.js"
+    ".": "./dist/animr-aegisub.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prjctg/animr-aegisub.git"
   },
   "scripts": {
     "build": "rollup -c",
