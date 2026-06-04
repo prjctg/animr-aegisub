@@ -122,7 +122,6 @@ export function wireEvents(G, shadowRoot, luaScript, opts) {
           yres: opts.yres ?? 480,
           containerW: W,
           containerH: H,
-          lineStartMs: line.s,
         });
       } catch (e) {
         (opts.onError ?? console.error)('animr-aegisub: ASS parse error:', e);

@@ -6,7 +6,7 @@
  * and \move to animate 20 video units upward over the syllable duration.
  */
 
-import { karaskel } from '../src/index.js';
+import { karaskel } from "https://cdn.jsdelivr.net/gh/prjctg/animr-aegisub@0.1/dist/animr-aegisub.js";
 
 export const luaScript = `
 for si, syl in ipairs(line.kara) do
@@ -30,11 +30,15 @@ for si, syl in ipairs(line.kara) do
 end
 `;
 
-export const { h, s, default: init } = karaskel(luaScript, {
-  font: 'sans-serif',
-  fontSize: '52px',
-  fontWeight: 'bold',
-  position: 'center',
+export const {
+  h,
+  s,
+  default: init,
+} = karaskel(luaScript, {
+  font: "sans-serif",
+  fontSize: "52px",
+  fontWeight: "bold",
+  position: "center",
 });
 
 export default init;

@@ -8,7 +8,7 @@
  * Usage: paste this file's content into the Animr code editor.
  */
 
-import { karaskel } from 'https://cdn.jsdelivr.net/gh/animr/animr-aegisub@0.1/dist/animr-aegisub.esm.js';
+import { karaskel } from "https://cdn.jsdelivr.net/gh/prjctg/animr-aegisub@0.1/dist/animr-aegisub.js";
 
 // A simple karaskel Lua script:
 // - Iterates over syllables in line.kara
@@ -30,9 +30,13 @@ for si, syl in ipairs(line.kara) do
 end
 `;
 
-const { h, s, default: init } = karaskel(script, {
-  fontSize: '52px',
-  position: 'center',
+const {
+  h,
+  s,
+  default: init,
+} = karaskel(script, {
+  fontSize: "52px",
+  position: "center",
 });
 
 export { h, s };
