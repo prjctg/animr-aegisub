@@ -3,7 +3,7 @@
  *
  * SP1: one <div> per LayerSpec, positioned absolutely within #kstage.
  * SP2: measureLineEls() for real getBoundingClientRect text metrics.
- * SP4: will add syl-stack model with N children.
+ * SP4: createSylStack() groups clipped specs in an overflow:hidden wrapper.
  */
 
 export function buildStageHtml() {
@@ -28,6 +28,7 @@ export function createLayerEl(spec, opts, stage) {
     `transform:${spec.style.transform ?? 'translate(-50%,-50%)'}`,
     `color:${spec.style.color}`,
     `opacity:0`,
+    `z-index:${spec.layer ?? 0}`,
     `font-family:${opts.font ?? 'sans-serif'}`,
     `font-size:${opts.fontSize ?? '52px'}`,
     `font-weight:${opts.fontWeight ?? 'bold'}`,
@@ -37,6 +38,73 @@ export function createLayerEl(spec, opts, stage) {
     `will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`,
   ].join(';');
   return el;
+}
+
+/**
+ * Create a syl-stack wrapper div for a group of clipped LayerSpecs.
+ *
+ * The wrapper is sized to the clip rect and has overflow:hidden, so any child
+ * element positioned outside the clip rect bounds is automatically clipped.
+ * Children are positioned as a % of the wrapper's dimensions using video-coord
+ * arithmetic, so they land at the correct absolute video position.
+ *
+ * Only call this when all specs share the same clip rect (spec.clip).
+ *
+ * @param {Array}   clippedSpecs – LayerSpecs with non-null .clip
+ * @param {object}  opts         – { xres, yres, font, fontSize, fontWeight }
+ * @param {Element} stage        – #kstage container (for ownerDocument)
+ * @returns {{ wrapper: HTMLElement, children: HTMLElement[] }}
+ */
+export function createSylStack(clippedSpecs, opts, stage) {
+  const xres = opts.xres ?? 640;
+  const yres = opts.yres ?? 480;
+  const clip = clippedSpecs[0].clip;
+  const clipW = clip.x2 - clip.x1;
+  const clipH = clip.y2 - clip.y1;
+
+  const wrapper = stage.ownerDocument.createElement('div');
+  wrapper.className = 'syl-stack';
+  wrapper.style.cssText = [
+    'position:absolute',
+    `left:${(clip.x1 / xres * 100).toFixed(3)}%`,
+    `top:${(clip.y1 / yres * 100).toFixed(3)}%`,
+    `width:${(clipW / xres * 100).toFixed(3)}%`,
+    `height:${(clipH / yres * 100).toFixed(3)}%`,
+    'overflow:hidden',
+    'pointer-events:none',
+  ].join(';');
+
+  const children = clippedSpecs.map(spec => {
+    const el = stage.ownerDocument.createElement('div');
+    el.textContent = spec.text;
+
+    // Position as % of the wrapper's dimensions (= video-coord arithmetic)
+    const relX = ((spec.posX - clip.x1) / clipW * 100).toFixed(3);
+    const relY = ((spec.posY - clip.y1) / clipH * 100).toFixed(3);
+
+    const parts = [
+      'position:absolute',
+      `left:${relX}%`,
+      `top:${relY}%`,
+      `transform:${spec.style.transform ?? 'translate(-50%,-50%)'}`,
+      `color:${spec.style.color}`,
+      `opacity:0`,
+      `z-index:${spec.layer ?? 0}`,
+      `font-family:${opts.font ?? 'sans-serif'}`,
+      `font-size:${opts.fontSize ?? '52px'}`,
+      `font-weight:${opts.fontWeight ?? 'bold'}`,
+      'white-space:nowrap',
+    ];
+    if (spec.style.filter)                parts.push(`filter:${spec.style.filter}`);
+    if (spec.style.WebkitTextStrokeWidth) parts.push(`-webkit-text-stroke-width:${spec.style.WebkitTextStrokeWidth}`);
+    parts.push(`will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`);
+
+    el.style.cssText = parts.join(';');
+    wrapper.appendChild(el);
+    return el;
+  });
+
+  return { wrapper, children };
 }
 
 /**

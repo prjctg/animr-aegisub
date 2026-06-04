@@ -16,6 +16,9 @@
  * SP2 tags: \an N  \move(x1,y1,x2,y2[,t1,t2])
  * SP3 tags: \fscx N  \fscy N  \frz N  \frx N  \fry N  \blur N  \bord N
  *           \t(t1,t2,\tags...)  — piecewise keyframe tweens
+ * SP4 tags: \clip(x1,y1,x2,y2)  — rectangular clip mask
+ *
+ * SP4 LayerSpec additions: posX, posY (video coords), move (raw), clip (raw rect)
  */
 
 const TAG_RE = /\{([^}]*)\}/g;
@@ -78,6 +81,7 @@ export function parseAssDialogue(dialogue, opts = {}) {
   let posX = null;
   let posY = null;
   let move = null;
+  let clip = null;
   let anN = 5;
 
   // SP3 static tag values
@@ -120,6 +124,8 @@ export function parseAssDialogue(dialogue, opts = {}) {
       staticBlur = tag.value;
     } else if (tag.name === 'bord') {
       staticBord = tag.value;
+    } else if (tag.name === 'clip') {
+      clip = { x1: tag.x1, y1: tag.y1, x2: tag.x2, y2: tag.y2 };
     } else if (tag.name === 't') {
       tweenTags.push(tag);
     }
@@ -155,12 +161,28 @@ export function parseAssDialogue(dialogue, opts = {}) {
   if (hasFilter) style.filter = `blur(${staticBlur.toFixed(2)}px)`;
   if (hasBord)   style.WebkitTextStrokeWidth = `${staticBord.toFixed(2)}px`;
 
+  // SP4: clip-path CSS string (informational; syl-stack wrapper uses overflow:hidden)
+  if (clip) {
+    const t = (clip.y1 / yres * 100).toFixed(3);
+    const r = ((1 - clip.x2 / xres) * 100).toFixed(3);
+    const b = ((1 - clip.y2 / yres) * 100).toFixed(3);
+    const l = (clip.x1 / xres * 100).toFixed(3);
+    style.clipPath = `inset(${t}% ${r}% ${b}% ${l}%)`;
+  }
+
+  // SP4: ensure posX/posY always reflect the reference origin
+  if (move && posX === null) { posX = move.x1; posY = move.y1; }
+
   return {
     text: displayText,
     startMs,
     endMs,
     duration,
     layer: dialogue.layer ?? 0,
+    posX,    // video-coord X of element origin (null if no \pos or \move)
+    posY,    // video-coord Y of element origin
+    move,    // raw move object {x1,y1,x2,y2,t1,t2} or null
+    clip,    // raw clip rect {x1,y1,x2,y2} or null
     style,
     keyframes,
   };
@@ -351,6 +373,19 @@ function parseTags(block) {
       if (val !== null) {
         tags.push({ name: 'bord', value: val.value });
         i += 4 + val.len;
+        continue;
+      }
+    }
+
+    // SP4: \clip(x1,y1,x2,y2) — rectangular clip mask (video coords)
+    if (block.startsWith('clip(', i)) {
+      const end = block.indexOf(')', i + 5);
+      if (end !== -1) {
+        const args = block.slice(i + 5, end).split(',').map(Number);
+        if (args.length >= 4 && args.every(a => !isNaN(a))) {
+          tags.push({ name: 'clip', x1: args[0], y1: args[1], x2: args[2], y2: args[3] });
+        }
+        i = end + 1;
         continue;
       }
     }

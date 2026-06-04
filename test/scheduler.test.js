@@ -42,8 +42,20 @@ vi.mock('../src/layout.js', () => ({
   createLayerEl: vi.fn((spec, opts, stage) => {
     return makeMockEl(spec.text);
   }),
+  createSylStack: vi.fn((specs, opts, stage) => {
+    const wrapper = makeMockEl('wrapper');
+    const children = specs.map(s => makeMockEl(s.text));
+    return { wrapper, children };
+  }),
   buildStageHtml: () => '',
   computeSlotYs: (n, H, opts) => [H * 0.5],
+}));
+
+vi.mock('../src/canvas-particles.js', () => ({
+  CanvasParticleRenderer: vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    destroy: vi.fn(),
+  })),
 }));
 
 const { compileAndSchedule, cancelLine, cancelAll } = await import('../src/scheduler.js');
