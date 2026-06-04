@@ -78,6 +78,39 @@ export function buildLineTable(animrLine, animrSyls, slotY, containerW, containe
  * @param {Map<number, {width,height,center,left,right,middle}>} metricsMap
  *   Keyed by syl index (0-based). All values in video coordinate space.
  */
+/**
+ * Build the full KT $variable map for one syllable.
+ * All values are rounded integer strings, matching KT convention.
+ *
+ * @param {object} syl  – one entry from lineTable.kara
+ * @param {object} line – lineTable
+ * @returns {Map<string, string>}
+ */
+export function buildSylVarMap(syl, line) {
+  const r = v => String(Math.round(v));
+  const halfH = (syl.height ?? 0) / 2;
+  return new Map([
+    ['$scenter', r(syl.center)],
+    ['$sleft',   r(syl.left ?? 0)],
+    ['$sright',  r(syl.right ?? 0)],
+    ['$smiddle', r(syl.middle)],
+    ['$stop',    r((syl.middle ?? 0) - halfH)],
+    ['$sbottom', r((syl.middle ?? 0) + halfH)],
+    ['$swidth',  r(syl.width ?? 0)],
+    ['$sheight', r(syl.height ?? 0)],
+    ['$sdur',    r(syl.duration ?? 0)],
+    ['$sstart',  r(syl.start_time ?? 0)],
+    ['$send',    r(syl.end_time ?? 0)],
+    ['$si',      r(syl.i ?? 1)],
+    ['$lcenter', r(((line.left ?? 0) + (line.right ?? 0)) / 2)],
+    ['$lwidth',  r(line.lineWidth ?? (line.right ?? 0))],
+    ['$lheight', r(line.lineHeight ?? 0)],
+    ['$lstart',  r(line.start_time ?? 0)],
+    ['$lend',    r(line.end_time ?? 0)],
+    ['$ldur',    r((line.end_time ?? 0) - (line.start_time ?? 0))],
+  ]);
+}
+
 export function patchMetrics(lineTable, metricsMap) {
   for (let i = 0; i < lineTable.kara.length; i++) {
     const m = metricsMap.get(i);

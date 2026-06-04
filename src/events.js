@@ -12,8 +12,9 @@
  * The 1500ms preview window comfortably absorbs the single rAF round-trip.
  */
 
-import { initVM, runScript, disposeVM, injectExtents } from './fengari.js';
+import { initVM, runScript, disposeVM, injectExtents, execLua } from './fengari.js';
 import { buildLineTable, patchMetrics } from './karaskel-stub.js';
+import { isKTScript, parseKTBlocks, expandKTLine } from './kt-substrate.js';
 import { parseAssDialogue } from './ass-parser.js';
 import { computeSlotYs, measureLineEls } from './layout.js';
 import { compileAndSchedule, cancelLine, cancelAll } from './scheduler.js';
@@ -35,6 +36,7 @@ export function wireEvents(G, shadowRoot, luaScript, opts) {
   let stage = null;
   let L = null;  // Fengari Lua state
   let W = 0, H = 0;
+  const ktBlocks = isKTScript(luaScript) ? parseKTBlocks(luaScript) : null;
 
   // lineId → { syls, stream }
   const lineSylMap = new Map();
@@ -56,6 +58,9 @@ export function wireEvents(G, shadowRoot, luaScript, opts) {
 
     try {
       L = initVM(opts);
+      if (ktBlocks) {
+        for (const code of ktBlocks.codeOnce) execLua(L, code);
+      }
     } catch (e) {
       (opts.onError ?? console.error)('animr-aegisub: VM init failed:', e);
       return;
@@ -111,8 +116,10 @@ export function wireEvents(G, shadowRoot, luaScript, opts) {
     // 4. Inject measured extents into Lua VM so aegisub.text_extents() returns real values
     injectExtents(L, buildExtentsMap(lineTable));
 
-    // 5. Run the Lua script — syl positions now reflect real font metrics
-    const dialogues = runScript(L, luaScript, lineTable, opts);
+    // 5. Run the Lua script (or expand KT templates) — positions reflect real metrics
+    const dialogues = ktBlocks
+      ? expandKTLine(L, ktBlocks, lineTable, opts)
+      : runScript(L, luaScript, lineTable, opts);
 
     // 6. Parse ASS dialogue objects into LayerSpecs (pass container dims for \move px math)
     const layerSpecs = dialogues.map(d => {

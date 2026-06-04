@@ -57,6 +57,57 @@ export function runScript(L, luaScript, lineTable, opts = {}) {
   return collectResults(L, opts);
 }
 
+/**
+ * Execute a Lua code string in an existing VM state. Throws on Lua error.
+ * Used by kt-substrate.js for code-once blocks and template bodies.
+ */
+export function execLua(L, code) {
+  const { lua, lauxlib, to_luastring } = getFengari();
+  const status = lauxlib.luaL_dostring(L, to_luastring(code));
+  if (status !== lua.LUA_OK) {
+    const msg = readString(L, -1);
+    lua.lua_pop(L, 1);
+    throw new Error('animr-aegisub: execLua error: ' + msg);
+  }
+}
+
+/**
+ * Evaluate a Lua expression and return a value safe to splice back into Lua code.
+ * - Numbers/booleans → plain string ("320", "true")
+ * - Strings → Lua-quoted string literal ('"hello"') so the result is valid Lua
+ */
+export function evalExpression(L, expr) {
+  execLua(L,
+    'do local _v = (' + expr + ');' +
+    'if type(_v) == "string" then _kt_result = string.format("%q", _v)' +
+    ' else _kt_result = tostring(_v) end end'
+  );
+  return readGlobal(L, '_kt_result');
+}
+
+/**
+ * Set up the per-line Lua context (line table, subs, _appended, randomseed).
+ * Must be called before expandKTLine processes template bodies.
+ */
+export function setupLineContext(L, lineTable, opts = {}) {
+  const { lauxlib, lua, to_luastring } = getFengari();
+  const preCode = buildPreCode(lineTable, opts);
+  const status = lauxlib.luaL_dostring(L, to_luastring(preCode));
+  if (status !== lua.LUA_OK) {
+    const msg = readString(L, -1);
+    lua.lua_pop(L, 1);
+    throw new Error('animr-aegisub: setupLineContext error: ' + msg);
+  }
+}
+
+/**
+ * Collect and return the current _appended[] table from the Lua VM.
+ * Same as the internal collectResults but exported for kt-substrate.js.
+ */
+export function collectResultsRaw(L, opts) {
+  return collectResults(L, opts);
+}
+
 export function disposeVM(L) {
   if (!L || !fengariMod) return;
   fengariMod.lua.lua_close(L);
@@ -116,6 +167,20 @@ karaskel = {}
 karaskel.collect_head     = function(subs, config) end
 karaskel.preproc_line     = function(subs, config, line, do_furigana) end
 karaskel.preproc_line_pos = function(meta, styles, line, do_furigana) end
+
+function retime(mode, s, e)
+  local ls = line and line.start_time or 0
+  local ss = syl and syl.start_time or 0
+  local se = syl and syl.end_time   or 0
+  local sd = syl and syl.duration   or 0
+  if     mode == "syl"       then return ls+ss+s, ls+ss+sd+e
+  elseif mode == "presyl"    then return ls+ss+s, ls+ss+e
+  elseif mode == "postsyl"   then return ls+se+s, ls+se+e
+  elseif mode == "start2syl" then return ls+s,    ls+ss+e
+  elseif mode == "abs"       then return s, e
+  else                            return ls+ss+s, ls+ss+sd+e
+  end
+end
 `;
 }
 
