@@ -1,5 +1,5 @@
 /**
- * ASS tag parser — SP2.
+ * ASS tag parser — SP3.
  *
  * Converts a dialogue object (from subs.append()) into a LayerSpec:
  * {
@@ -8,12 +8,14 @@
  *   endMs:      number,
  *   duration:   number,
  *   layer:      number,
- *   style:      { left, top, color, opacity, transform },
- *   keyframes:  [{ opacity, transform, offset }],
+ *   style:      { left, top, color, opacity, transform, filter?, WebkitTextStrokeWidth? },
+ *   keyframes:  [{ opacity, transform, offset, filter?, WebkitTextStrokeWidth? }],
  * }
  *
  * SP1 tags: \pos(x,y)  \fad(in,out)  \alpha &HXX&  \c &HBBGGRR&
  * SP2 tags: \an N  \move(x1,y1,x2,y2[,t1,t2])
+ * SP3 tags: \fscx N  \fscy N  \frz N  \frx N  \fry N  \blur N  \bord N
+ *           \t(t1,t2,\tags...)  — piecewise keyframe tweens
  */
 
 const TAG_RE = /\{([^}]*)\}/g;
@@ -78,6 +80,16 @@ export function parseAssDialogue(dialogue, opts = {}) {
   let move = null;
   let anN = 5;
 
+  // SP3 static tag values
+  let staticFscx = 100;
+  let staticFscy = 100;
+  let staticFrz  = 0;
+  let staticFrx  = 0;
+  let staticFry  = 0;
+  let staticBlur = 0;
+  let staticBord = 0;
+  const tweenTags = [];
+
   for (const tag of parseTags(tagBlock)) {
     if (tag.name === 'pos') {
       posX = tag.x;
@@ -94,6 +106,22 @@ export function parseAssDialogue(dialogue, opts = {}) {
       style.opacity = tag.value;
     } else if (tag.name === 'color') {
       style.color = tag.value;
+    } else if (tag.name === 'fscx') {
+      staticFscx = tag.value;
+    } else if (tag.name === 'fscy') {
+      staticFscy = tag.value;
+    } else if (tag.name === 'frz') {
+      staticFrz = tag.value;
+    } else if (tag.name === 'frx') {
+      staticFrx = tag.value;
+    } else if (tag.name === 'fry') {
+      staticFry = tag.value;
+    } else if (tag.name === 'blur') {
+      staticBlur = tag.value;
+    } else if (tag.name === 'bord') {
+      staticBord = tag.value;
+    } else if (tag.name === 't') {
+      tweenTags.push(tag);
     }
   }
 
@@ -109,9 +137,23 @@ export function parseAssDialogue(dialogue, opts = {}) {
   }
 
   const opacityKfs = buildFadKeyframes(duration, fadeIn, fadeOut, style.opacity);
+
+  const tweenCtx = {
+    tweenTags,
+    staticFscx, staticFscy,
+    staticFrz, staticFrx, staticFry,
+    staticBlur, staticBord,
+  };
+
   const keyframes = mergeKeyframes(opacityKfs, move, style.transform, duration, {
     containerW, containerH, xres, yres,
-  });
+  }, tweenCtx);
+
+  // Propagate initial filter/stroke to style for createLayerEl
+  const hasFilter = staticBlur !== 0 || tweenTags.some(t => t.tags.some(tg => tg.name === 'blur'));
+  const hasBord   = staticBord !== 0 || tweenTags.some(t => t.tags.some(tg => tg.name === 'bord'));
+  if (hasFilter) style.filter = `blur(${staticBlur.toFixed(2)}px)`;
+  if (hasBord)   style.WebkitTextStrokeWidth = `${staticBord.toFixed(2)}px`;
 
   return {
     text: displayText,
@@ -228,12 +270,152 @@ function parseTags(block) {
       }
     }
 
+    // SP3 tags ──────────────────────────────────────────────────────────────
+
+    // \t(t1,t2,\tags)  or  \t(\tags)  — piecewise tween block
+    // Must check before \frx/\fry/\frz (all start with 'fr')
+    if (block.startsWith('t(', i)) {
+      const end = findClosingParen(block, i + 1);
+      if (end !== -1) {
+        const inner = block.slice(i + 2, end);
+        const tTag = parseTweenBlock(inner);
+        if (tTag) tags.push(tTag);
+        i = end + 1;
+        continue;
+      }
+    }
+
+    // \fscx N  (check before \fscy)
+    if (block.startsWith('fscx', i)) {
+      const val = readNumber(block, i + 4);
+      if (val !== null) {
+        tags.push({ name: 'fscx', value: val.value });
+        i += 4 + val.len;
+        continue;
+      }
+    }
+
+    // \fscy N
+    if (block.startsWith('fscy', i)) {
+      const val = readNumber(block, i + 4);
+      if (val !== null) {
+        tags.push({ name: 'fscy', value: val.value });
+        i += 4 + val.len;
+        continue;
+      }
+    }
+
+    // \frz N  (check before \frx/\fry)
+    if (block.startsWith('frz', i)) {
+      const val = readNumber(block, i + 3);
+      if (val !== null) {
+        tags.push({ name: 'frz', value: val.value });
+        i += 3 + val.len;
+        continue;
+      }
+    }
+
+    // \frx N
+    if (block.startsWith('frx', i)) {
+      const val = readNumber(block, i + 3);
+      if (val !== null) {
+        tags.push({ name: 'frx', value: val.value });
+        i += 3 + val.len;
+        continue;
+      }
+    }
+
+    // \fry N
+    if (block.startsWith('fry', i)) {
+      const val = readNumber(block, i + 3);
+      if (val !== null) {
+        tags.push({ name: 'fry', value: val.value });
+        i += 3 + val.len;
+        continue;
+      }
+    }
+
+    // \blur N
+    if (block.startsWith('blur', i)) {
+      const val = readNumber(block, i + 4);
+      if (val !== null) {
+        tags.push({ name: 'blur', value: val.value });
+        i += 4 + val.len;
+        continue;
+      }
+    }
+
+    // \bord N
+    if (block.startsWith('bord', i)) {
+      const val = readNumber(block, i + 4);
+      if (val !== null) {
+        tags.push({ name: 'bord', value: val.value });
+        i += 4 + val.len;
+        continue;
+      }
+    }
+
     // Advance past current tag word
     const next = block.indexOf('\\', i);
     i = next === -1 ? block.length : next;
   }
 
   return tags;
+}
+
+// ── SP3 parsing helpers ───────────────────────────────────────────────────────
+
+/**
+ * Read a (possibly signed, possibly floating) number starting at pos in block,
+ * optionally preceded by a space. Returns { value, len } or null.
+ */
+function readNumber(block, pos) {
+  // Skip optional single space
+  let p = pos;
+  if (block[p] === ' ') p++;
+  const m = block.slice(p).match(/^(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  return { value: parseFloat(m[1]), len: (p - pos) + m[1].length };
+}
+
+/**
+ * Find the closing ')' for a '(' at position parenPos in block.
+ * ASS \t() does not nest, so no recursive depth tracking needed.
+ */
+function findClosingParen(block, parenPos) {
+  return block.indexOf(')', parenPos);
+}
+
+/**
+ * Parse the content inside \t(...) and return a tween tag object.
+ * Supports:
+ *   \t(t1,t2,\tags)       — explicit timing
+ *   \t(\tags)             — no timing (t1=null, t2=null → resolved to 0/duration later)
+ */
+function parseTweenBlock(inner) {
+  // Trim leading whitespace
+  const trimmed = inner.trimStart();
+
+  let t1 = null, t2 = null, tagsStr = trimmed;
+
+  // Detect timing form: starts with a digit or '-'
+  if (/^-?\d/.test(trimmed)) {
+    // Expect "t1,t2,\rest" — find two comma-separated numbers
+    const parts = trimmed.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*([\s\S]*)$/);
+    if (parts) {
+      t1 = parseFloat(parts[1]);
+      t2 = parseFloat(parts[2]);
+      tagsStr = parts[3];
+    } else {
+      return null;
+    }
+  }
+
+  // Recursively parse inner tags (no \t nesting allowed in ASS)
+  const innerTags = parseTags(tagsStr).filter(t => t.name !== 't');
+  if (innerTags.length === 0) return null;
+
+  return { name: 't', t1, t2, tags: innerTags };
 }
 
 // ── Keyframe builders ─────────────────────────────────────────────────────────
@@ -277,37 +459,37 @@ export function buildFadKeyframes(duration, fadeIn, fadeOut, baseOpacity = 1) {
 }
 
 /**
- * Merge opacity keyframes (\fad) with transform keyframes (\move + \an) into
- * a unified [{opacity, transform, offset}] array for el.animate().
+ * Merge opacity keyframes (\fad) with transform keyframes (\move + \an + SP3 tweens)
+ * into a unified keyframe array for el.animate().
  *
- * Opacity is linearly interpolated between its own keyframes.
- * Transform is computed from the \move timeline: static before t1, linear
- * motion between t1 and t2, static after t2 (in container-pixel space).
+ * SP2 path (tweenCtx===null): returns [{opacity, transform, offset}] — unchanged.
+ * SP3 path (tweenCtx provided): adds filter/WebkitTextStrokeWidth when active.
  *
- * @param {Array}  opacityKfs – from buildFadKeyframes()
- * @param {object|null} move  – { x1,y1,x2,y2,t1,t2 } or null
- * @param {string} anchorStr  – CSS translate string from \an N
- * @param {number} duration   – animation duration in ms
- * @param {object} opts       – { containerW, containerH, xres, yres }
- * @returns {Array<{opacity: number, transform: string, offset: number}>}
+ * @param {Array}        opacityKfs  – from buildFadKeyframes()
+ * @param {object|null}  move        – { x1,y1,x2,y2,t1,t2 } or null
+ * @param {string}       anchorStr   – CSS translate string from \an N
+ * @param {number}       duration    – animation duration in ms
+ * @param {object}       opts        – { containerW, containerH, xres, yres }
+ * @param {object|null}  tweenCtx    – SP3 tween context, or null for SP2 behavior
+ * @returns {Array}
  */
-export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {}) {
+export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {}, tweenCtx = null) {
   const { containerW = 800, containerH = 450, xres = 640, yres = 480 } = opts;
 
-  const t1 = move ? move.t1 : 0;
-  const t2 = move ? move.t2 : duration;
+  const t1move = move ? move.t1 : 0;
+  const t2move = move ? move.t2 : duration;
   const dx = move ? (move.x2 - move.x1) / xres * containerW : 0;
   const dy = move ? (move.y2 - move.y1) / yres * containerH : 0;
   const hasMove = move && (dx !== 0 || dy !== 0);
 
-  function transformAt(off) {
-    if (!hasMove) return anchorStr;
-    const t1off = t1 / duration;
-    const t2off = t2 / duration;
-    if (off <= t1off) return `${anchorStr} translate(0px,0px)`;
-    if (off >= t2off) return `${anchorStr} translate(${dx.toFixed(2)}px,${dy.toFixed(2)}px)`;
+  function moveTranslateAt(off) {
+    if (!hasMove) return '';
+    const t1off = t1move / duration;
+    const t2off = t2move / duration;
+    if (off <= t1off) return 'translate(0px,0px)';
+    if (off >= t2off) return `translate(${dx.toFixed(2)}px,${dy.toFixed(2)}px)`;
     const frac = (off - t1off) / (t2off - t1off);
-    return `${anchorStr} translate(${(dx * frac).toFixed(2)}px,${(dy * frac).toFixed(2)}px)`;
+    return `translate(${(dx * frac).toFixed(2)}px,${(dy * frac).toFixed(2)}px)`;
   }
 
   function opacityAt(off) {
@@ -321,19 +503,167 @@ export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {})
     return opacityKfs.at(-1)?.opacity ?? 1;
   }
 
-  // Collect offsets from both timelines
+  // ── SP2 path (tweenCtx null) ──────────────────────────────────────────────
+  if (!tweenCtx) {
+    function transformAt(off) {
+      const mv = moveTranslateAt(off);
+      return mv ? `${anchorStr} ${mv}` : anchorStr;
+    }
+
+    const offsets = [...new Set([
+      0,
+      ...opacityKfs.map(k => k.offset),
+      ...(hasMove ? [t1move / duration, t2move / duration] : []),
+      1,
+    ])].sort((a, b) => a - b);
+
+    return offsets.map(off => ({
+      offset: off,
+      opacity: opacityAt(off),
+      transform: transformAt(off),
+    }));
+  }
+
+  // ── SP3 path ─────────────────────────────────────────────────────────────
+
+  const {
+    tweenTags,
+    staticFscx = 100, staticFscy = 100,
+    staticFrz = 0, staticFrx = 0, staticFry = 0,
+    staticBlur = 0, staticBord = 0,
+  } = tweenCtx;
+
+  const fscxTL = buildTweenTimeline(tweenTags, 'fscx', staticFscx, duration);
+  const fscyTL = buildTweenTimeline(tweenTags, 'fscy', staticFscy, duration);
+  const frzTL  = buildTweenTimeline(tweenTags, 'frz',  staticFrz,  duration);
+  const frxTL  = buildTweenTimeline(tweenTags, 'frx',  staticFrx,  duration);
+  const fryTL  = buildTweenTimeline(tweenTags, 'fry',  staticFry,  duration);
+  const blurTL = buildTweenTimeline(tweenTags, 'blur', staticBlur, duration);
+  const bordTL = buildTweenTimeline(tweenTags, 'bord', staticBord, duration);
+
+  const hasScale  = fscxTL.hasMotion || fscyTL.hasMotion || staticFscx !== 100 || staticFscy !== 100;
+  const hasRotate = frzTL.hasMotion  || frxTL.hasMotion  || fryTL.hasMotion
+                  || staticFrz !== 0 || staticFrx !== 0  || staticFry !== 0;
+  const hasFilter = blurTL.hasMotion || staticBlur !== 0;
+  const hasBord   = bordTL.hasMotion || staticBord !== 0;
+
+  // Collect all time boundaries from all tween timelines
+  const tweenOffsets = [];
+  for (const tl of [fscxTL, fscyTL, frzTL, frxTL, fryTL, blurTL, bordTL]) {
+    for (const tw of tl.tweens) {
+      tweenOffsets.push(tw.t1 / duration, tw.t2 / duration);
+    }
+  }
+
   const offsets = [...new Set([
     0,
     ...opacityKfs.map(k => k.offset),
-    ...(hasMove ? [t1 / duration, t2 / duration] : []),
+    ...(hasMove ? [t1move / duration, t2move / duration] : []),
+    ...tweenOffsets,
     1,
   ])].sort((a, b) => a - b);
 
-  return offsets.map(off => ({
-    offset: off,
-    opacity: opacityAt(off),
-    transform: transformAt(off),
-  }));
+  return offsets.map(off => {
+    const tMs = off * duration;
+
+    const sx = interpProp(fscxTL.tweens, staticFscx, tMs) / 100;
+    const sy = interpProp(fscyTL.tweens, staticFscy, tMs) / 100;
+    const rz = interpProp(frzTL.tweens,  staticFrz,  tMs);
+    const rx = interpProp(frxTL.tweens,  staticFrx,  tMs);
+    const ry = interpProp(fryTL.tweens,  staticFry,  tMs);
+    const blurV = interpProp(blurTL.tweens, staticBlur, tMs);
+    const bordV = interpProp(bordTL.tweens, staticBord, tMs);
+
+    const mv = moveTranslateAt(off);
+    const transform = buildTransformString(
+      anchorStr, mv, sx, sy, rz, rx, ry, hasScale, hasRotate,
+    );
+
+    const kf = { offset: off, opacity: opacityAt(off), transform };
+    if (hasFilter) kf.filter = `blur(${blurV.toFixed(2)}px)`;
+    if (hasBord)   kf.WebkitTextStrokeWidth = `${bordV.toFixed(2)}px`;
+    return kf;
+  });
+}
+
+// ── SP3 private helpers ───────────────────────────────────────────────────────
+
+/**
+ * Interpolate a single property value at time tMs using a sorted tween list.
+ * @param {Array<{t1,t2,value}>} tweens – sorted by t1
+ * @param {number} initialVal           – static tag value or spec default
+ * @param {number} tMs                  – time in ms from line start
+ * @returns {number}
+ */
+function interpProp(tweens, initialVal, tMs) {
+  let prev = initialVal;
+  for (const tw of tweens) {
+    if (tMs <= tw.t1) return prev;
+    if (tMs >= tw.t2) { prev = tw.value; continue; }
+    return prev + (tw.value - prev) * (tMs - tw.t1) / (tw.t2 - tw.t1);
+  }
+  return prev;
+}
+
+/**
+ * Build a sorted tween timeline for one property from raw \t() tag objects.
+ * Resolves null t1→0, null t2→duration.
+ *
+ * @param {Array}  tweenTags   – all { name:'t', t1, t2, tags } from parseTags
+ * @param {string} propName    – e.g. 'fscx'
+ * @param {number} staticInit  – initial value (from static tag or default)
+ * @param {number} duration    – total animation duration ms
+ * @returns {{ tweens: Array<{t1,t2,value}>, hasMotion: boolean }}
+ */
+function buildTweenTimeline(tweenTags, propName, staticInit, duration) {
+  const tweens = tweenTags
+    .filter(t => t.tags.some(tg => tg.name === propName))
+    .map(t => {
+      const inner = t.tags.find(tg => tg.name === propName);
+      return {
+        t1: t.t1 ?? 0,
+        t2: t.t2 ?? duration,
+        value: inner.value,
+      };
+    })
+    .sort((a, b) => a.t1 - b.t1);
+
+  return { tweens, hasMotion: tweens.length > 0 };
+}
+
+/**
+ * Compose a CSS transform string from all active transform components.
+ * Composition order: anchorStr [moveTranslate] [scaleX scaleY] [rotate rotateX rotateY]
+ *
+ * includeScale / includeRotate are determined once per animation to guarantee all
+ * keyframes in the Web Animations call have the same transform structure.
+ *
+ * @param {string}  anchorStr      – from \an N
+ * @param {string}  moveTranslate  – 'translate(Xpx,Ypx)' or ''
+ * @param {number}  sx             – scaleX fraction (1.0 = 100%)
+ * @param {number}  sy             – scaleY fraction
+ * @param {number}  rz             – Z rotation degrees
+ * @param {number}  rx             – X rotation degrees
+ * @param {number}  ry             – Y rotation degrees
+ * @param {boolean} includeScale   – always emit scaleX/Y even at 1
+ * @param {boolean} includeRotate  – always emit rotate/X/Y even at 0
+ * @returns {string}
+ */
+function buildTransformString(anchorStr, moveTranslate, sx, sy, rz, rx, ry, includeScale, includeRotate) {
+  const parts = [anchorStr];
+  if (moveTranslate) parts.push(moveTranslate);
+  if (includeScale)  parts.push(`scaleX(${fmtN(sx)}) scaleY(${fmtN(sy)})`);
+  if (includeRotate) {
+    parts.push(`rotate(${fmtN(rz)}deg)`);
+    if (rx !== 0 || includeRotate) parts.push(`rotateX(${fmtN(rx)}deg)`);
+    if (ry !== 0 || includeRotate) parts.push(`rotateY(${fmtN(ry)}deg)`);
+  }
+  return parts.join(' ');
+}
+
+/** Format a number without unnecessary trailing zeros. */
+function fmtN(n) {
+  return +parseFloat(n.toFixed(4));
 }
 
 // ── Exported parsing helpers ──────────────────────────────────────────────────

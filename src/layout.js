@@ -32,7 +32,9 @@ export function createLayerEl(spec, opts, stage) {
     `font-size:${opts.fontSize ?? '52px'}`,
     `font-weight:${opts.fontWeight ?? 'bold'}`,
     'white-space:nowrap',
-    'will-change:opacity,transform',
+    ...(spec.style.filter ? [`filter:${spec.style.filter}`] : []),
+    ...(spec.style.WebkitTextStrokeWidth ? [`-webkit-text-stroke-width:${spec.style.WebkitTextStrokeWidth}`] : []),
+    `will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`,
   ].join(';');
   return el;
 }
