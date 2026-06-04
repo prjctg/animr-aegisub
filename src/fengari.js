@@ -62,6 +62,36 @@ export function disposeVM(L) {
   fengariMod.lua.lua_close(L);
 }
 
+/**
+ * Inject measured text extents into the live Lua VM so aegisub.text_extents()
+ * returns real values. Must be called after patchMetrics() and before runScript().
+ *
+ * @param {object} L – Fengari Lua state
+ * @param {Map<string, {w: number, h: number}>} extentsMap
+ *   Keyed by syl.text_stripped; values in video coordinate space.
+ */
+export function injectExtents(L, extentsMap) {
+  const { lauxlib, lua, to_luastring } = getFengari();
+
+  const entries = [...extentsMap.entries()]
+    .map(([text, { w, h }]) => `[${luaStr(text)}]={w=${w},h=${h}}`)
+    .join(',');
+
+  const code = `
+_extents = {${entries}}
+aegisub.text_extents = function(style, text)
+  local e = _extents[text]
+  if e then return e.w, e.h, 0, 0 else return 0, 0, 0, 0 end
+end
+`;
+  const status = lauxlib.luaL_dostring(L, to_luastring(code));
+  if (status !== lua.LUA_OK) {
+    const msg = readString(L, -1);
+    lua.lua_pop(L, 1);
+    throw new Error('animr-aegisub: injectExtents error: ' + msg);
+  }
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function buildSetupCode(opts) {

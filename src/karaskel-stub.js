@@ -2,7 +2,7 @@
  * Builds a karaskel-compatible line table from Animr SYL event data.
  *
  * SP1: equal-width approximation for syl.center/left/right (no getBBox).
- * SP2: patchMetrics() will replace these with real getBBox values.
+ * SP2: patchMetrics() replaces these with real getBoundingClientRect values.
  *
  * Coordinate space: VIDEO space (0..xres, 0..yres), so Lua scripts using
  * \pos(syl.center, line.middle) produce normalized ASS coordinates.
@@ -68,4 +68,26 @@ export function buildLineTable(animrLine, animrSyls, slotY, containerW, containe
     lineWidth: xres,
     lineHeight: fontSize * 1.2,
   };
+}
+
+/**
+ * Patch lineTable.kara in-place with real measured metrics from measureLineEls().
+ * Must be called before runScript() so Lua sees accurate syl.width/center/etc.
+ *
+ * @param {object} lineTable  – from buildLineTable()
+ * @param {Map<number, {width,height,center,left,right,middle}>} metricsMap
+ *   Keyed by syl index (0-based). All values in video coordinate space.
+ */
+export function patchMetrics(lineTable, metricsMap) {
+  for (let i = 0; i < lineTable.kara.length; i++) {
+    const m = metricsMap.get(i);
+    if (!m) continue;
+    const syl = lineTable.kara[i];
+    syl.width  = m.width;
+    syl.height = m.height;
+    syl.center = m.center;
+    syl.left   = m.left;
+    syl.right  = m.right;
+    syl.middle = m.middle;
+  }
 }

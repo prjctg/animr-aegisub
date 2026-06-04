@@ -14,10 +14,11 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "fengari-web": "^0.1.4",
-    "rollup": "^4.9.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "fengari-web": "^0.1.4",
+    "jsdom": "^29.1.1",
+    "rollup": "^4.9.0",
     "vitest": "^2.1.0"
   }
 }
