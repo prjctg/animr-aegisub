@@ -2,10 +2,12 @@
 
 Run Aegisub karaskel Lua scripts as Animr karaoke animations.
 
-Pass a Lua karaskel script as a string — the library handles Fengari VM init,
-`aegisub.*` / `karaskel` mocks, ASS tag parsing, and Web Animations scheduling.
-The API mirrors [animr-shadertoy](../animr-shadertoy/README.md): you pass the script,
-get back `{ h, s, default }` Animr module exports.
+If you already write karaskel effects in Aegisub, your script works here with zero changes — pass it as a string and the library handles Fengari VM init, `aegisub.*` / `karaskel` mocks, ASS tag parsing, and Web Animations scheduling.
+
+**New to karaskel?** Start here:
+- [Aegisub karaoke scripting tutorial](https://aegisub.org/docs/latest/karaoke_scripting_tutorial/)
+- [karaskel.lua reference](https://aegisub.org/docs/latest/automation/lua/modules/karaskel.lua/)
+- [Karaoke Templater (KT)](https://aegisub.org/docs/latest/karaoke_templater/) — template-based alternative (SP5 target)
 
 ---
 

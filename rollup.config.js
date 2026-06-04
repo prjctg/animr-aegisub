@@ -7,6 +7,10 @@ export default {
     file: 'dist/animr-aegisub.js',
     format: 'esm',
     sourcemap: true,
+    banner: `/*!
+ * animr-aegisub — MIT License — Copyright (c) 2026 prjctg
+ * Includes fengari-web — MIT License — Copyright (c) 2017-2025 Benoit Giannangeli, Daurnimator
+ */`,
   },
   plugins: [
     resolve({ browser: true }),
