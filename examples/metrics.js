@@ -8,7 +8,7 @@
 
 import { karaskel } from "https://cdn.jsdelivr.net/gh/prjctg/animr-aegisub@0.1/dist/animr-aegisub.js";
 
-export const luaScript = `
+export const luaScript = String.raw`
 for si, syl in ipairs(line.kara) do
   if syl.text_stripped ~= "" then
     local t0 = line.start_time + syl.start_time
