@@ -97,12 +97,21 @@ export function compileAndSchedule(lineId, layerSpecs, G, stage, opts) {
       }
     }
 
-    // Clipped specs: always DOM — syl-stack wrapper with overflow:hidden
+    // Clipped specs: group by clip rect so each distinct rect gets its own
+    // overflow:hidden wrapper (specs with different rects must not share one).
     if (clipped.length > 0) {
-      const { wrapper, children } = createSylStack(clipped, opts, stage);
-      stage.appendChild(wrapper);
-      record.els.push(wrapper); // removing wrapper removes children from DOM
-      children.forEach((el, i) => scheduleAnim(el, clipped[i], now, record.anims));
+      const clipGroups = new Map();
+      for (const spec of clipped) {
+        const ck = `${spec.clip.x1},${spec.clip.y1},${spec.clip.x2},${spec.clip.y2}`;
+        if (!clipGroups.has(ck)) clipGroups.set(ck, []);
+        clipGroups.get(ck).push(spec);
+      }
+      for (const cg of clipGroups.values()) {
+        const { wrapper, children } = createSylStack(cg, opts, stage);
+        stage.appendChild(wrapper);
+        record.els.push(wrapper);
+        children.forEach((el, i) => scheduleAnim(el, cg[i], now, record.anims));
+      }
     }
   }
 
