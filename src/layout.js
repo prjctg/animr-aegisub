@@ -4,7 +4,10 @@
  * SP1: one <div> per LayerSpec, positioned absolutely within #kstage.
  * SP2: measureLineEls() for real getBoundingClientRect text metrics.
  * SP4: createSylStack() groups clipped specs in an overflow:hidden wrapper.
+ * SP6: createDrawingEl() creates a Canvas element for \p1 drawing specs.
  */
+
+import { parseDrawingCmds } from './ass-drawing.js';
 
 export function buildStageHtml() {
   return `<div id="kstage" style="position:absolute;inset:0;overflow:hidden;pointer-events:none"></div>`;
@@ -20,11 +23,10 @@ export function buildStageHtml() {
 export function createLayerEl(spec, opts, stage) {
   const el = stage.ownerDocument.createElement('div');
   el.textContent = spec.text;
-  el.style.cssText = [
+  const parts = [
     'position:absolute',
     `left:${spec.style.left}`,
     `top:${spec.style.top}`,
-    // \an N provides the anchor offset; default is center (\an5)
     `transform:${spec.style.transform ?? 'translate(-50%,-50%)'}`,
     `color:${spec.style.color}`,
     `opacity:0`,
@@ -33,10 +35,62 @@ export function createLayerEl(spec, opts, stage) {
     `font-size:${opts.fontSize ?? '52px'}`,
     `font-weight:${opts.fontWeight ?? 'bold'}`,
     'white-space:nowrap',
-    ...(spec.style.filter ? [`filter:${spec.style.filter}`] : []),
-    ...(spec.style.WebkitTextStrokeWidth ? [`-webkit-text-stroke-width:${spec.style.WebkitTextStrokeWidth}`] : []),
-    `will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`,
-  ].join(';');
+  ];
+  if (spec.style.filter)                 parts.push(`filter:${spec.style.filter}`);
+  if (spec.style.WebkitTextStrokeWidth)  parts.push(`-webkit-text-stroke-width:${spec.style.WebkitTextStrokeWidth}`);
+  if (spec.style.WebkitTextStrokeColor)  parts.push(`-webkit-text-stroke-color:${spec.style.WebkitTextStrokeColor}`);
+  if (spec.style.textShadow)             parts.push(`text-shadow:${spec.style.textShadow}`);
+  parts.push(`will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`);
+  el.style.cssText = parts.join(';');
+  return el;
+}
+
+/**
+ * Create a Canvas element for a drawing-mode LayerSpec (\p1 etc.).
+ *
+ * The canvas is 400×400px, positioned at posX/posY (via left/top % + \an transform),
+ * so CSS transforms (scale, rotate) apply relative to the drawing's visual center.
+ * The Path2D is drawn with its coordinate origin at the canvas center (200, 200).
+ *
+ * @param {object} spec   – LayerSpec with drawingScale > 0 and drawingCmds string
+ * @param {object} opts   – { xres, yres }
+ * @param {Element} stage – #kstage container
+ * @returns {HTMLCanvasElement}
+ */
+export function createDrawingEl(spec, opts, stage) {
+  const CANVAS_SIZE = 400;
+  const ORIGIN = CANVAS_SIZE / 2; // 200
+
+  const el = stage.ownerDocument.createElement('canvas');
+  el.width  = CANVAS_SIZE;
+  el.height = CANVAS_SIZE;
+
+  const parts = [
+    'position:absolute',
+    `left:${spec.style.left}`,
+    `top:${spec.style.top}`,
+    `transform:${spec.style.transform ?? 'translate(-50%,-50%)'}`,
+    `opacity:0`,
+    `z-index:${spec.layer ?? 0}`,
+    'pointer-events:none',
+  ];
+  if (spec.style.filter) parts.push(`filter:${spec.style.filter}`);
+  parts.push(`will-change:opacity,transform${spec.style.filter ? ',filter' : ''}`);
+  el.style.cssText = parts.join(';');
+
+  // Draw the path immediately (static drawing; animation drives opacity/transform)
+  if (spec.drawingCmds) {
+    try {
+      const path = parseDrawingCmds(spec.drawingCmds, spec.drawingScale ?? 1);
+      const ctx = el.getContext('2d');
+      ctx.translate(ORIGIN, ORIGIN);
+      ctx.fillStyle = spec.style.color ?? 'white';
+      ctx.fill(path);
+    } catch (e) {
+      (opts.onError ?? console.error)('animr-aegisub: drawing parse error:', e);
+    }
+  }
+
   return el;
 }
 

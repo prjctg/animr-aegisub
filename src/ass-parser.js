@@ -17,8 +17,11 @@
  * SP3 tags: \fscx N  \fscy N  \frz N  \frx N  \fry N  \blur N  \bord N
  *           \t(t1,t2,\tags...)  — piecewise keyframe tweens
  * SP4 tags: \clip(x1,y1,x2,y2)  — rectangular clip mask
+ * SP6 tags: \p N  \iclip(x1,y1,x2,y2)  \1c–\4c  \shad N  \be N
  *
  * SP4 LayerSpec additions: posX, posY (video coords), move (raw), clip (raw rect)
+ * SP6 LayerSpec additions: drawingScale, drawingCmds, iclip, style.color2,
+ *   style.borderColor, style.shadowColor, style.textShadow
  */
 
 const TAG_RE = /\{([^}]*)\}/g;
@@ -66,7 +69,9 @@ export function parseAssDialogue(dialogue, opts = {}) {
   const duration = Math.max(1, endMs - startMs);
 
   const tagBlock = extractTagBlock(dialogue.text ?? '');
-  const displayText = stripTags(dialogue.text ?? '');
+  // Tags are parsed first; displayText vs drawingCmds is determined after.
+  // (drawingScale is resolved below after the tag loop)
+  const rawText = stripTags(dialogue.text ?? '');
 
   const style = {
     left: '50%',
@@ -93,6 +98,15 @@ export function parseAssDialogue(dialogue, opts = {}) {
   let staticBlur = 0;
   let staticBord = 0;
   const tweenTags = [];
+
+  // SP6 tag values
+  let drawingScale = 0;
+  let iclip        = null;
+  let color2       = null;
+  let borderColor  = null;
+  let shadowColor  = null;
+  let shadowDist   = 0;
+  let edgeBlur     = 0;
 
   for (const tag of parseTags(tagBlock)) {
     if (tag.name === 'pos') {
@@ -128,8 +142,29 @@ export function parseAssDialogue(dialogue, opts = {}) {
       clip = { x1: tag.x1, y1: tag.y1, x2: tag.x2, y2: tag.y2 };
     } else if (tag.name === 't') {
       tweenTags.push(tag);
+    // SP6 tags ────────────────────────────────────────────────────────────────
+    } else if (tag.name === 'p') {
+      drawingScale = tag.scale;
+    } else if (tag.name === 'iclip') {
+      iclip = { x1: tag.x1, y1: tag.y1, x2: tag.x2, y2: tag.y2 };
+    } else if (tag.name === 'c1') {
+      style.color = tag.value;
+    } else if (tag.name === 'c2') {
+      color2 = tag.value;
+    } else if (tag.name === 'c3') {
+      borderColor = tag.value;
+    } else if (tag.name === 'c4') {
+      shadowColor = tag.value;
+    } else if (tag.name === 'shad') {
+      shadowDist = tag.value;
+    } else if (tag.name === 'be') {
+      edgeBlur = tag.value;
     }
   }
+
+  // SP6: split raw text into display text vs drawing commands
+  const displayText = drawingScale > 0 ? '' : rawText;
+  const drawingCmds = drawingScale > 0 ? rawText : null;
 
   // \move supersedes \pos for position; use move.x1,y1 as the start position
   if (move) {
@@ -158,8 +193,25 @@ export function parseAssDialogue(dialogue, opts = {}) {
   // Propagate initial filter/stroke to style for createLayerEl
   const hasFilter = staticBlur !== 0 || tweenTags.some(t => t.tags.some(tg => tg.name === 'blur'));
   const hasBord   = staticBord !== 0 || tweenTags.some(t => t.tags.some(tg => tg.name === 'bord'));
-  if (hasFilter) style.filter = `blur(${staticBlur.toFixed(2)}px)`;
-  if (hasBord)   style.WebkitTextStrokeWidth = `${staticBord.toFixed(2)}px`;
+  // SP6: \be adds softer edge blur — compose with \blur (values add in same filter pass)
+  const totalBlur = staticBlur + edgeBlur * 0.5;
+  if (hasFilter || edgeBlur > 0) style.filter = `blur(${totalBlur.toFixed(2)}px)`;
+  if (hasBord) style.WebkitTextStrokeWidth = `${staticBord.toFixed(2)}px`;
+
+  // SP6: multi-color channel styles
+  if (color2)      style.color2      = color2;
+  if (borderColor) style.borderColor = borderColor;
+  if (shadowColor) style.shadowColor = shadowColor;
+
+  // SP6: \3c sets outline color (used with \bord)
+  if (borderColor && hasBord) style.WebkitTextStrokeColor = borderColor;
+
+  // SP6: \shad N + optional \4c shadow color
+  if (shadowDist > 0) {
+    const sColor = shadowColor ?? 'rgba(0,0,0,0.7)';
+    const sd = shadowDist.toFixed(2);
+    style.textShadow = `${sd}px ${sd}px 0 ${sColor}`;
+  }
 
   // SP4: clip-path CSS string (informational; syl-stack wrapper uses overflow:hidden)
   if (clip) {
@@ -179,10 +231,13 @@ export function parseAssDialogue(dialogue, opts = {}) {
     endMs,
     duration,
     layer: dialogue.layer ?? 0,
-    posX,    // video-coord X of element origin (null if no \pos or \move)
-    posY,    // video-coord Y of element origin
-    move,    // raw move object {x1,y1,x2,y2,t1,t2} or null
-    clip,    // raw clip rect {x1,y1,x2,y2} or null
+    posX,         // video-coord X of element origin (null if no \pos or \move)
+    posY,         // video-coord Y of element origin
+    move,         // raw move object {x1,y1,x2,y2,t1,t2} or null
+    clip,         // raw clip rect {x1,y1,x2,y2} or null
+    iclip,        // SP6: inverse clip rect {x1,y1,x2,y2} or null
+    drawingScale, // SP6: 0=text, 1/2/4=drawing mode (from \pN)
+    drawingCmds,  // SP6: drawing command string or null
     style,
     keyframes,
   };
@@ -386,6 +441,70 @@ function parseTags(block) {
           tags.push({ name: 'clip', x1: args[0], y1: args[1], x2: args[2], y2: args[3] });
         }
         i = end + 1;
+        continue;
+      }
+    }
+
+    // SP6 tags ──────────────────────────────────────────────────────────────
+
+    // \iclip(x1,y1,x2,y2) — inverse clip mask
+    if (block.startsWith('iclip(', i)) {
+      const end = block.indexOf(')', i + 6);
+      if (end !== -1) {
+        const args = block.slice(i + 6, end).split(',').map(Number);
+        if (args.length >= 4 && args.every(a => !isNaN(a))) {
+          tags.push({ name: 'iclip', x1: args[0], y1: args[1], x2: args[2], y2: args[3] });
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+
+    // \p N — drawing scale (0=off, 1=px, 2=0.5px, 4=0.125px, …)
+    // Must be checked after \pos( to avoid false prefix match on 'p'
+    if (block[i] === 'p' && block[i + 1] !== 'o' && /\d/.test(block[i + 1] ?? '')) {
+      const val = readNumber(block, i + 1);
+      if (val !== null) {
+        tags.push({ name: 'p', scale: val.value });
+        i += 1 + val.len;
+        continue;
+      }
+    }
+
+    // \1c \2c \3c \4c &HBBGGRR& — four color channels
+    if (/^[1-4]$/.test(block[i] ?? '') && block[i + 1] === 'c') {
+      const channel = parseInt(block[i], 10);
+      const hexStart = block.indexOf('&H', i + 2);
+      if (hexStart !== -1 && hexStart <= i + 5) {
+        const hexEnd = block.indexOf('&', hexStart + 2);
+        if (hexEnd !== -1) {
+          const hex = block.slice(hexStart + 2, hexEnd).padStart(6, '0');
+          const bb = parseInt(hex.slice(0, 2), 16);
+          const gg = parseInt(hex.slice(2, 4), 16);
+          const rr = parseInt(hex.slice(4, 6), 16);
+          tags.push({ name: `c${channel}`, value: `rgb(${rr},${gg},${bb})` });
+          i = hexEnd + 1;
+          continue;
+        }
+      }
+    }
+
+    // \shad N — shadow offset (uniform in both X and Y)
+    if (block.startsWith('shad', i)) {
+      const val = readNumber(block, i + 4);
+      if (val !== null) {
+        tags.push({ name: 'shad', value: val.value });
+        i += 4 + val.len;
+        continue;
+      }
+    }
+
+    // \be N — softer edge blur (checked after \bord and \blur)
+    if (block.startsWith('be', i) && !/^[a-z]/i.test(block[i + 2] ?? '')) {
+      const val = readNumber(block, i + 2);
+      if (val !== null) {
+        tags.push({ name: 'be', value: val.value });
+        i += 2 + val.len;
         continue;
       }
     }

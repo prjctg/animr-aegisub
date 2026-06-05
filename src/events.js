@@ -17,7 +17,7 @@ import { buildLineTable, patchMetrics } from './karaskel-stub.js';
 import { isKTScript, parseKTBlocks, expandKTLine } from './kt-substrate.js';
 import { parseAssDialogue } from './ass-parser.js';
 import { computeSlotYs, measureLineEls } from './layout.js';
-import { compileAndSchedule, cancelLine, cancelAll } from './scheduler.js';
+import { compileAndSchedule, cancelLine, cancelAll, pauseAll } from './scheduler.js';
 
 /**
  * Wire all G events for the library. Called once from createKaraskel().
@@ -140,8 +140,13 @@ export function wireEvents(G, shadowRoot, luaScript, opts) {
     compileAndSchedule(line.id, layerSpecs, G, stage, opts);
   }
 
-  // ── SEEK / RESIZE / UNINIT ────────────────────────────────────────────────
+  // ── SEEK / PAUSE / PLAY / RESIZE / UNINIT ────────────────────────────────
   G.on(TYPE.SEEK, () => cancelAll());
+
+  // PAUSE: freeze running animations in place.
+  // PLAY: cancel everything; G re-fires LINE preview with corrected delays.
+  if (TYPE.PAUSE) G.on(TYPE.PAUSE, () => pauseAll());
+  if (TYPE.PLAY)  G.on(TYPE.PLAY,  () => cancelAll());
 
   G.on(TYPE.RESIZE, () => {
     updateDim();

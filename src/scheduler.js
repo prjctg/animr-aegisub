@@ -9,7 +9,7 @@
  *      creates syl-stack wrapper divs for clipped groups; sets z-index by layer.
  */
 
-import { createLayerEl, createSylStack } from './layout.js';
+import { createLayerEl, createDrawingEl, createSylStack } from './layout.js';
 import { CanvasParticleRenderer } from './canvas-particles.js';
 
 // lineId → { els: HTMLElement[], anims: Animation[], canvasRenderers: CanvasParticleRenderer[] }
@@ -80,14 +80,17 @@ export function compileAndSchedule(lineId, layerSpecs, G, stage, opts) {
     const clipped   = group.filter(s => s.clip != null);
     const unclipped = group.filter(s => s.clip == null);
 
-    // Unclipped specs: Canvas if the group is too large, otherwise DOM
+    // Unclipped specs: Canvas particle renderer for large groups,
+    // createDrawingEl for \p1 drawing specs, createLayerEl for text.
     if (unclipped.length > CANVAS_THRESHOLD) {
       const renderer = new CanvasParticleRenderer(unclipped, G, stage, opts);
       renderer.start();
       record.canvasRenderers.push(renderer);
     } else {
       for (const spec of unclipped) {
-        const el = createLayerEl(spec, opts, stage);
+        const el = spec.drawingScale > 0
+          ? createDrawingEl(spec, opts, stage)
+          : createLayerEl(spec, opts, stage);
         stage.appendChild(el);
         record.els.push(el);
         scheduleAnim(el, spec, now, record.anims);
@@ -114,13 +117,27 @@ export function cancelLine(lineId) {
   if (!record) return;
   for (const anim of record.anims) anim.cancel();
   for (const el of record.els) el.remove();
-  record.canvasRenderers?.forEach(r => r.destroy());
+  record.canvasRenderers.forEach(r => r.destroy());
   pendingLines.delete(lineId);
 }
 
 /**
- * Cancel and remove all pending lines (called on SEEK / UNINIT).
+ * Cancel and remove all pending lines (called on SEEK / UNINIT / PLAY-after-pause).
  */
 export function cancelAll() {
   pendingLines.forEach((_, id) => cancelLine(id));
+}
+
+/**
+ * Pause all in-flight animations (called on G.TYPE.PAUSE).
+ * Running animations are paused; finished animations are left as-is.
+ * On the subsequent G.TYPE.PLAY, cancelAll() is called and G re-fires
+ * LINE preview events with correct delays for the resumed position.
+ */
+export function pauseAll() {
+  for (const record of pendingLines.values()) {
+    for (const anim of record.anims) {
+      if (anim.playState === 'running') anim.pause();
+    }
+  }
 }

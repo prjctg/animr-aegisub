@@ -14,6 +14,7 @@ and extends the unit test suite. Each phase builds on the previous one; nothing 
 | **SP3** | ASS `\t()` piecewise keyframes · `\fscx/y` · `\frz` · `\blur` · `\bord` | Multi-layer per syl: scale bounce + glow duplicate layer | ass-parser (\t algorithm) · transform composition |
 | **SP4** | Multi-element DOM (N layers per syl via syl-stack) · `\clip()` · Canvas overlay for particle layers | Clip sweep + particle burst (N ∝ `syl.width × line.height`) | multi-layer scheduling · particle count scaling |
 | **SP5** | KT substrate: `code once` · `$variable` substitution · `!expression!` Fengari eval · `loop N + j` · `retime()` | Full KT script (Lollipop-style) with color arrays + looped particles | $var substitution · retime mapping · loop expansion |
+| **SP6** | `\p1` ASS drawing → Canvas `Path2D` · `\1c–\4c` color channels · `\shad N` · `\be N` · `\iclip()` · Pause/Resume (`G.TYPE.PAUSE/PLAY`) | Lollipop candy shapes with drawing commands + multi-color glow | ass-drawing · ass-parser (SP6 tags) · scheduler-pause |
 
 ---
 
@@ -136,6 +137,40 @@ A minimal KT engine processes `code once` blocks, substitutes `$variables`, eval
 - `karaskel-stub.js`: expose full `$variable` set ($scenter, $smiddle, $swidth, etc.)
 
 **New Lua example (examples/kt-lollipop.js):** Lollipop-style KT script with color tables + looped particles.
+
+---
+
+---
+
+## SP6 — ASS Drawing Commands + Extended Tags + Pause/Resume
+
+**Goal:** Complete the ASS tag surface for real-world KFX effects. Enable `\p1` vector shapes
+(lollipop candy, particle outlines), full multi-color channels, and pause/resume handling.
+
+**Changes from SP5:**
+- `src/ass-drawing.js` (new): ASS drawing command parser → Canvas `Path2D`.
+  Commands: `m n l b s p c`. Scale: `1/2^(N-1)` for `\pN`.
+- `src/ass-parser.js`: add `\p N`, `\iclip(x1,y1,x2,y2)`, `\1c–\4c`, `\shad N`, `\be N`.
+  New `LayerSpec` fields: `drawingScale`, `drawingCmds`, `iclip`, `style.color2`,
+  `style.borderColor`, `style.shadowColor`, `style.textShadow`.
+- `src/layout.js`: `createDrawingEl(spec, opts, stage)` — 400×400 canvas element,
+  draws `Path2D` at canvas center (200, 200), positioned at `posX/posY` via CSS.
+  Also adds `text-shadow` and `-webkit-text-stroke-color` to `createLayerEl`.
+- `src/scheduler.js`: route `drawingScale > 0` specs to `createDrawingEl`; add `pauseAll()`.
+- `src/events.js`: wire `G.TYPE.PAUSE` → `pauseAll()`, `G.TYPE.PLAY` → `cancelAll()`.
+
+**Limitations:**
+- `\iclip` is parsed and stored in `LayerSpec.iclip` but CSS rendering is deferred
+  (inverse clip requires `path(evenodd,…)` with absolute coords; complex for positioned elements).
+- `\2c` (karaoke highlight fill) is parsed but not animated (sweep feature is separate).
+- B-spline (`s` command) is approximated with line segments.
+- Drawing canvas is 400×400px; shapes larger than 200px from origin may be clipped.
+
+**New files:**
+- `src/ass-drawing.js`
+- `test/ass-drawing.test.js`
+- `test/scheduler-pause.test.js`
+- `examples/lollipop-shapes.js`
 
 ---
 

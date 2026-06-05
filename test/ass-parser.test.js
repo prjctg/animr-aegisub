@@ -412,3 +412,191 @@ describe('mergeKeyframes', () => {
     }
   });
 });
+
+// ── SP6 tags ──────────────────────────────────────────────────────────────────
+
+const SP6_OPTS = { xres: 640, yres: 480, containerW: 800, containerH: 450 };
+
+describe('SP6: \\p N — drawing mode', () => {
+  it('\\p1 sets drawingScale=1 and moves text to drawingCmds', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\an5\\pos(320,240)\\p1}m 0 0 l 10 10' },
+      SP6_OPTS,
+    );
+    expect(spec.drawingScale).toBe(1);
+    expect(spec.drawingCmds).toBe('m 0 0 l 10 10');
+    expect(spec.text).toBe('');
+  });
+
+  it('\\p0 is treated as drawing off (scale=0, text rendered normally)', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\p0}hello' },
+      SP6_OPTS,
+    );
+    expect(spec.drawingScale).toBe(0);
+    expect(spec.drawingCmds).toBeNull();
+    expect(spec.text).toBe('hello');
+  });
+
+  it('\\p4 sets drawingScale=4', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 500, layer: 0, text: '{\\p4}m 0 0 c' },
+      SP6_OPTS,
+    );
+    expect(spec.drawingScale).toBe(4);
+  });
+
+  it('default spec has drawingScale=0 and null drawingCmds', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 500, layer: 0, text: 'hello' },
+      SP6_OPTS,
+    );
+    expect(spec.drawingScale).toBe(0);
+    expect(spec.drawingCmds).toBeNull();
+  });
+});
+
+describe('SP6: \\iclip(x1,y1,x2,y2)', () => {
+  it('parses iclip coordinates into LayerSpec.iclip', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\iclip(100,50,400,300)}hello' },
+      SP6_OPTS,
+    );
+    expect(spec.iclip).toEqual({ x1: 100, y1: 50, x2: 400, y2: 300 });
+  });
+
+  it('iclip is null when not present', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 500, layer: 0, text: 'hello' },
+      SP6_OPTS,
+    );
+    expect(spec.iclip).toBeNull();
+  });
+
+  it('\\iclip and \\clip can coexist in the same spec', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0,
+        text: '{\\clip(0,0,320,240)\\iclip(100,50,200,150)}hello' },
+      SP6_OPTS,
+    );
+    expect(spec.clip).toEqual({ x1: 0, y1: 0, x2: 320, y2: 240 });
+    expect(spec.iclip).toEqual({ x1: 100, y1: 50, x2: 200, y2: 150 });
+  });
+});
+
+describe('SP6: \\1c–\\4c color channels', () => {
+  it('\\1c sets style.color (same as \\c)', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\1c&H69FFF6&}hi' },
+      SP6_OPTS,
+    );
+    // BGR: 69FFF6 → B=0x69, G=0xFF, R=0xF6 → rgb(246,255,105)
+    expect(spec.style.color).toBe('rgb(246,255,105)');
+  });
+
+  it('\\2c sets style.color2', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\2c&HFF0000&}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.color2).toBe('rgb(0,0,255)');
+  });
+
+  it('\\3c sets style.borderColor', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\3c&H0000FF&}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.borderColor).toBe('rgb(255,0,0)');
+  });
+
+  it('\\4c sets style.shadowColor', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\4c&H000000&}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.shadowColor).toBe('rgb(0,0,0)');
+  });
+
+  it('\\3c + \\bord sets both WebkitTextStrokeWidth and WebkitTextStrokeColor', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\bord2\\3c&H0000FF&}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.WebkitTextStrokeWidth).toBe('2.00px');
+    expect(spec.style.WebkitTextStrokeColor).toBe('rgb(255,0,0)');
+  });
+});
+
+describe('SP6: \\shad N — shadow offset', () => {
+  it('\\shad 3 sets style.textShadow with default black color', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\shad3}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.textShadow).toMatch(/^3\.00px 3\.00px 0 /);
+    expect(spec.style.textShadow).toContain('rgba(0,0,0,0.7)');
+  });
+
+  it('\\shad 0 does not set textShadow', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\shad0}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.textShadow).toBeUndefined();
+  });
+
+  it('\\shad + \\4c uses the \\4c color for shadow', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\shad2\\4c&H000080&}hi' },
+      SP6_OPTS,
+    );
+    // BGR 000080 → B=0, G=0, R=128 → rgb(128,0,0) = dark red
+    expect(spec.style.textShadow).toContain('rgb(128,0,0)');
+  });
+});
+
+describe('SP6: \\be N — edge blur', () => {
+  it('\\be 2 sets style.filter with blur at 0.5× the value', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\be2}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.filter).toBe('blur(1.00px)');
+  });
+
+  it('\\be 1 → blur(0.50px)', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\be1}hi' },
+      SP6_OPTS,
+    );
+    expect(spec.style.filter).toBe('blur(0.50px)');
+  });
+
+  it('\\blur + \\be compose into a single filter value (values add)', () => {
+    const spec = parseAssDialogue(
+      { start_time: 0, end_time: 1000, layer: 0, text: '{\\blur3\\be2}hi' },
+      SP6_OPTS,
+    );
+    // totalBlur = 3 + 2*0.5 = 4.0
+    expect(spec.style.filter).toBe('blur(4.00px)');
+  });
+});
+
+describe('SP6: combined tags — lollipop particle', () => {
+  it('parses the full lollipop particle tag block without errors', () => {
+    const spec = parseAssDialogue({
+      start_time: 0,
+      end_time: 700,
+      layer: 0,
+      text: '{\\c&H69FFF6&\\an5\\pos(285,248)\\blur0\\bord0\\fscx40\\fscy40\\t(\\blur5)\\fad(0,300)\\p1\\be1}m 0 0 b 21 0 21 25 0 25 b -19 25 -19 0 0 0',
+    }, SP6_OPTS);
+    expect(spec.drawingScale).toBe(1);
+    expect(spec.drawingCmds).toBe('m 0 0 b 21 0 21 25 0 25 b -19 25 -19 0 0 0');
+    expect(spec.style.color).toBe('rgb(246,255,105)');
+    // \be1 + \blur0 → totalBlur = 0 + 1*0.5 = 0.5
+    expect(spec.style.filter).toBe('blur(0.50px)');
+    expect(spec.posX).toBe(285);
+    expect(spec.posY).toBe(248);
+  });
+});
