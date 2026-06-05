@@ -30,7 +30,7 @@ const CANVAS_THRESHOLD = 50;
 function groupBySyl(layerSpecs) {
   const groups = new Map();
   for (const spec of layerSpecs) {
-    const key = spec.posX == null
+    const key = (spec.posX == null || spec.posY == null)
       ? `nopos:${spec.startMs}:${spec.layer}`
       : `${spec.posX.toFixed(1)},${spec.posY.toFixed(1)}`;
     if (!groups.has(key)) groups.set(key, []);
@@ -48,7 +48,7 @@ function scheduleAnim(el, spec, now, animsArr) {
   const delay = spec.startMs - now;
   if (delay >= -spec.duration) {
     const anim = el.animate(spec.keyframes, {
-      delay:    Math.max(0, delay),
+      delay,
       duration: spec.duration,
       fill:     'forwards',
     });
@@ -115,6 +115,7 @@ export function compileAndSchedule(lineId, layerSpecs, G, stage, opts) {
     }
   }
 
+  if (pendingLines.has(lineId)) cancelLine(lineId);
   pendingLines.set(lineId, record);
 }
 
