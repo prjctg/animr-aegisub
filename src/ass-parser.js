@@ -629,6 +629,7 @@ export function buildFadKeyframes(duration, fadeIn, fadeOut, baseOpacity = 1) {
  */
 export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {}, tweenCtx = null) {
   const { containerW = 800, containerH = 450, xres = 640, yres = 480 } = opts;
+  const clamp01 = v => Math.max(0, Math.min(1, v));
 
   const t1move = move ? move.t1 : 0;
   const t2move = move ? move.t2 : duration;
@@ -667,7 +668,7 @@ export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {},
     const offsets = [...new Set([
       0,
       ...opacityKfs.map(k => k.offset),
-      ...(hasMove ? [t1move / duration, t2move / duration] : []),
+      ...(hasMove ? [clamp01(t1move / duration), clamp01(t2move / duration)] : []),
       1,
     ])].sort((a, b) => a - b);
 
@@ -705,14 +706,14 @@ export function mergeKeyframes(opacityKfs, move, anchorStr, duration, opts = {},
   const tweenOffsets = [];
   for (const tl of [fscxTL, fscyTL, frzTL, frxTL, fryTL, blurTL, bordTL]) {
     for (const tw of tl.tweens) {
-      tweenOffsets.push(tw.t1 / duration, tw.t2 / duration);
+      tweenOffsets.push(clamp01(tw.t1 / duration), clamp01(tw.t2 / duration));
     }
   }
 
   const offsets = [...new Set([
     0,
     ...opacityKfs.map(k => k.offset),
-    ...(hasMove ? [t1move / duration, t2move / duration] : []),
+    ...(hasMove ? [clamp01(t1move / duration), clamp01(t2move / duration)] : []),
     ...tweenOffsets,
     1,
   ])].sort((a, b) => a - b);
