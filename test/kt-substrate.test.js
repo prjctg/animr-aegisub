@@ -301,6 +301,18 @@ describe('kt-substrate (Fengari VM)', () => {
     expect(results[0].text).toBe('v=3');
   });
 
+  it('$var = !expr! chained: later expr can reference earlier $var', () => {
+    const blocks = parseKTBlocks([
+      'template syl noblank',
+      '  $a = !10!',
+      '  $b = !$a * 3!',
+      '  subs.append({layer=0, start_time=0, end_time=1000, text="b=$b"})',
+      'end',
+    ].join('\n'));
+    const results = expandKTLine(L, blocks, makeLineTable([makeSyl()]), {});
+    expect(results[0].text).toBe('b=30');
+  });
+
   it('$var = !expr! local assignment works', () => {
     const blocks = parseKTBlocks([
       'template syl noblank',

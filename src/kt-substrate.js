@@ -166,7 +166,8 @@ export function expandKTLine(L, blocks, lineTable, opts = {}) {
  */
 function processLocalAssignments(L, code, varMap) {
   return code.replace(/^[^\S\n]*\$(\w+)\s*=\s*!([^!]+)!\s*$/gm, (_, name, expr) => {
-    const value = evalExpression(L, expr.trim());
+    const substituted = substituteVars(expr.trim(), varMap);
+    const value = evalExpression(L, substituted);
     varMap.set('$' + name, value);
     return '';
   });
