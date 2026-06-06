@@ -53,6 +53,11 @@ function scheduleAnim(el, spec, now, animsArr) {
       fill:     'forwards',
     });
     animsArr.push(anim);
+    // Remove the element once its own animation finishes naturally so it
+    // doesn't stay frozen (fill:'forwards') and stack with later specs that
+    // share the same line. cancelLine() already removes elements on early
+    // cancellation — anim.finished rejects in that case, so swallow it.
+    anim.finished?.then(() => el.remove()).catch(() => {});
   }
 }
 
